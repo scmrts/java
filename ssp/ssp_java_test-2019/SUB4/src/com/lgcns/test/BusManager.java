@@ -12,9 +12,12 @@ import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.StringJoiner;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
@@ -35,13 +38,32 @@ public class BusManager {
 	
 	private static BusManager instance;
 	
-	public static BusManager getInstance() {
-		if(instance == null) {
-			instance = new BusManager();
+	
+	public static synchronized BusManager getInstance() {
+        if ( instance == null ) {
+            instance = new BusManager();
+        }
+        return instance;
+    }
+	
+	public String toString() {
+		RunManager.readLock.lock();
+		StringJoiner str = new StringJoiner("\n");
+//		this.buses.entrySet().stream().mapToObj(e -> e.getValue().stream().collect(Collectors.joining("\n")));
+		Iterator<Entry<String, List<Bus>>> iterator = this.buses.entrySet().iterator();
+		while(iterator.hasNext()) {
+			
+			Entry<String, List<Bus>> next = iterator.next();
+			str.add(next.getKey());
+			StringJoiner busstr = new StringJoiner("\n");
+			next.getValue().stream().forEach(o -> busstr.add(o.toString()));
+			str.add(busstr.toString());
 		}
-		
-		return instance;
+		RunManager.readLock.unlock();
+		return str.toString();
 	}
+	
+	
 	
 	/**
 	 * 한줄을 읽어서 buses에 추가한다.
@@ -73,6 +95,9 @@ public class BusManager {
 		BusManager busManager = BusManager.getInstance();
 		busManager.touch(RunManager.transformToDate(line[0]));
 		RunManager.writeLock.unlock();
+		System.out.println("###############################################################1");
+		System.out.println(this);
+		System.out.println("###############################################################2");
 	}
 	
 	/**
@@ -90,7 +115,8 @@ public class BusManager {
 			if(e.getValue().stream().noneMatch(o -> o.time.getTime() == curTime.getTime())) {
 				List<Bus> curBus = e.getValue();
 				Bus prev = curBus.get(0);
-				Bus next = curBus.get(1);
+				Bus next = curBus.size() == 1 ? prev : curBus.get(1); 
+				
 
 				Bus bus = new Bus();
 				bus.name = e.getKey();

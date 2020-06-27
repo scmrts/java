@@ -8,12 +8,19 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 
 import org.omg.CORBA.StringHolder;
 
 
 public class RunManager {
 
+	public static ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock();
+	public static ReadLock readLock = reentrantReadWriteLock.readLock();
+	public static WriteLock writeLock = reentrantReadWriteLock.writeLock();
+	
 	public static Date transformToDate(String time) {
 		SimpleDateFormat transFormat = new SimpleDateFormat("HH:mm:ss");
 
