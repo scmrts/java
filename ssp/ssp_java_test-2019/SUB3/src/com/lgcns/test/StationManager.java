@@ -1,9 +1,15 @@
 package com.lgcns.test;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
-import com.lgcns.test.vo.Station;
 
 public class StationManager {
 	public List<Station> stations = new ArrayList<Station>();
@@ -19,10 +25,38 @@ public class StationManager {
 		String[] line = curLine.split("#");
 		Station e = new Station();
 		e.name = line[0];
-		e.distance = Integer.parseInt(line[1]);
-		if(line.length > 2) {
-			e.speed = Integer.parseInt(line[2]);
-		}
+		e.location = Integer.parseInt(line[1]);
+		e.speed = Integer.parseInt(line[2]) * 1000 / 3600;
 		this.stations.add(e);
 	}
+	
+	public void printNearestBusInfo(Station station, Bus bus) {
+		try {
+			Path path = Paths.get("./OUTFILE/ARRIVAL.TXT");
+			int distance = bus.name.equals("NOBUS") ? 0 : station.location - bus.location;
+			String str = String.format("%s#%s#%s,%05d\n", bus.getTime(), station.name, bus.name, distance);
+			Files.write(path, str.getBytes(),  StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+			
+			
+		} catch(Exception e) {e.printStackTrace();}
+	}
+	public void printNearestBusWithArraivalTime(Station station, Date time) {
+		String[] nearestBusWithArrivalTime = station.getNearestBusWithArrivalTime(time);
+		
+		SimpleDateFormat dformat = new SimpleDateFormat("hh:mm:ss");
+		
+		String format = null;
+		if(nearestBusWithArrivalTime == null) {
+			format = String.format("%s#%s#%s,%s\n", dformat.format(time), station.name, "NOBUS", "00:00:00");
+		} else {
+			format = String.format("%s#%s#%s,%s\n", dformat.format(time), station.name, nearestBusWithArrivalTime[0], nearestBusWithArrivalTime[1]);
+		}
+		Path path = Paths.get("./OUTFILE/SIGNAGE.TXT");
+		try {
+			Files.write(path, format.getBytes(),  StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
 }
