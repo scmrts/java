@@ -22,7 +22,7 @@ public class StationManager {
 	
 	public List<Station> stations = new ArrayList<Station>();
 	private static StationManager instance;
-	public static StationManager getInstance() {
+	public static synchronized StationManager getInstance() {
 		if(instance == null) {
 			instance = new StationManager();
 		}

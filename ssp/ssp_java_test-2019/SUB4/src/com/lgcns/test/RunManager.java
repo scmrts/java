@@ -1,8 +1,10 @@
 package com.lgcns.test;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -44,11 +46,10 @@ public class RunManager {
 	public static void main(String[] args) throws IOException {
 		
 //		BusManager busManager = BusManager.getInstance();
-//		StationManager stationManager = StationManager.getInstance();
-		
+		StationManager stationManager = StationManager.getInstance();
+		Files.lines(Paths.get("./INFILE/STATION.TXT")).forEach(line -> stationManager.push(line));
 		try(ServerSocket serverSocket = new ServerSocket(9876)) {
 			ExecutorService executorService = Executors.newFixedThreadPool(50);
-			Thread.interrupted();
 			while(!Thread.currentThread().isInterrupted()) {
 				try {
 					Socket client = serverSocket.accept();
@@ -71,13 +72,15 @@ public class RunManager {
 		}
 		@Override
 		public void run() {
-			try {
-				BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+			try(BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+				BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()))) {
+				
 				String readLine = null;
 				String busName = null;
 				BusManager busManager = BusManager.getInstance();
 				while((readLine = reader.readLine()) != null) {
-					
+					writeLock.lock();
+					System.out.println("readLine    --> " +busName+"  "+readLine);
 					if(readLine.startsWith("BUS")) {
 						busName = readLine;
 					} else if(readLine.startsWith("MOBILE")) {
@@ -85,9 +88,16 @@ public class RunManager {
 					} else if(readLine.startsWith("STA")) {
 						
 					} else if(readLine.startsWith("PRINT")) {
-						
+						Date lastUpdateTime = busManager.getLastUpdateTime();
+						List<String> prePostBusInfo = busManager.transformPrePostBusInfoToString(busManager.getPrePostBusInfo(lastUpdateTime));
+						prePostBusInfo.stream().forEach(t -> {
+							try {
+								writer.write(t);
+							} catch (IOException e) {
+								e.printStackTrace();
+							}
+						});
 					} else {
-						System.out.println(busName + "#"+ readLine);
 						String[] split = readLine.split("#");
 						if(split.length > 1) {
 							busManager.push(String.format("%s#%s,%s", split[0], busName, split[1]));
@@ -95,7 +105,7 @@ public class RunManager {
 							busManager.push(readLine);
 						}
 					} 
-					System.out.print("");
+					writeLock.unlock();
 				}
 				
 			} catch (IOException e) {

@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
@@ -28,7 +29,9 @@ public class BusManager {
 //	ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock();
 //	ReadLock readLock = reentrantReadWriteLock.readLock();
 //	WriteLock writeLock = reentrantReadWriteLock.writeLock();
-	public Map<String, List<Bus>> buses = new HashMap<String, List<Bus>>();
+	public Map<String, List<Bus>> buses = new ConcurrentHashMap<String, List<Bus>>();
+
+private Date lastUpdateTime;
 	
 	public static Comparator<Bus> timeComparator = (o1, o2) -> o1.time.compareTo(o2.time); 
 	
@@ -64,6 +67,19 @@ public class BusManager {
 	}
 	
 	
+	public Date getLastUpdateTime() {
+		RunManager.readLock.lock();
+		Date date = this.lastUpdateTime;
+		RunManager.readLock.unlock();
+		return date;
+		
+	}
+	
+	public void setLastUpdateTime(Date date) {
+		RunManager.writeLock.lock();
+		this.lastUpdateTime = date;
+		RunManager.writeLock.unlock();
+	}
 	
 	/**
 	 * 한줄을 읽어서 buses에 추가한다.
@@ -94,10 +110,11 @@ public class BusManager {
 		}
 		BusManager busManager = BusManager.getInstance();
 		busManager.touch(RunManager.transformToDate(line[0]));
-		RunManager.writeLock.unlock();
+		
 		System.out.println("###############################################################1");
 		System.out.println(this);
 		System.out.println("###############################################################2");
+		RunManager.writeLock.unlock();
 	}
 	
 	/**
@@ -112,37 +129,40 @@ public class BusManager {
 			 * 해당 시간에 버스 정보가 없으면 현재 시간에 맞는 버스 위치를 만들어 buses를 업데이트 한다. 
 			 */
 			Date d = curTime;
+			
 			if(e.getValue().stream().noneMatch(o -> o.time.getTime() == curTime.getTime())) {
 				List<Bus> curBus = e.getValue();
-				Bus prev = curBus.get(0);
-				Bus next = curBus.size() == 1 ? prev : curBus.get(1); 
-				
-
-				Bus bus = new Bus();
-				bus.name = e.getKey();
-				bus.location = next.location;
-				bus.time = curTime;
-				bus.speed = next.speed;
-				int timeGap = (int) (curTime.getTime() - next.time.getTime()) / 1000;
-				
-				Station beforeStation = StationManager.getInstance().stations.stream().filter(s -> s.location < next.location).max((a, b) -> a.location - b.location).orElseGet(Station::new);
-				
-				List<Station> stations = StationManager.getInstance().stations.stream().filter(s -> s.location >= beforeStation.location).collect(Collectors.toList());
-				
-				
-				while(timeGap > 0 ) {
-					for(Station station : stations) {
-						bus.location += Math.min(bus.speed, station.speed);
-						if(--timeGap <= 0) {
-							break;
-						}
-						
-						if(bus.location >= station.location) {
-							continue;
+				if(curBus.size() >= 2) {
+					Bus prev = curBus.get(0);
+					Bus next = curBus.get(1);
+					
+	
+					Bus bus = new Bus();
+					bus.name = e.getKey();
+					bus.location = next.location;
+					bus.time = curTime;
+					bus.speed = next.speed;
+					int timeGap = (int) (curTime.getTime() - next.time.getTime()) / 1000;
+					System.out.print("");
+					Station beforeStation = StationManager.getInstance().stations.stream().filter(s -> s.location < next.location).max((a, b) -> a.location - b.location).orElseGet(Station::new);
+					
+					List<Station> stations = StationManager.getInstance().stations.stream().filter(s -> s.location >= beforeStation.location).collect(Collectors.toList());
+					
+					
+					while(timeGap > 0 ) {
+						for(Station station : stations) {
+							bus.location += Math.min(bus.speed, station.speed);
+							if(--timeGap <= 0) {
+								break;
+							}
+							
+							if(bus.location >= station.location) {
+								continue;
+							}
 						}
 					}
+					this.touch(bus, true);
 				}
-				this.touch(bus, true);
 			}
 		});
 		RunManager.writeLock.unlock();
@@ -164,13 +184,14 @@ public class BusManager {
 		if(old.size() == 0) {
 			this.buses.put(bus.name, old);
 		} 
-		if(old.size() > 1) {
-			old.remove(0);
-		}
+		
 		if(! isAuto) {
 			bus.setSpeed(old.stream().sorted(BusManager.timeComparator).findFirst());
 		}
 		old.add(bus);
+		if(old.size() == 3) {
+			old.remove(0);
+		}
 		this.buses.put(bus.name,  old);
 		RunManager.writeLock.unlock();
 	}
@@ -189,11 +210,63 @@ public class BusManager {
 		return collect;
 	}
 	
+	/**
+	 * 선후행 버스 목록을 string으로 변환 
+	 * @param buses
+	 * @return
+	 */
+	public List<String> transformPrePostBusInfoToString(List<Bus> buses) {
+		RunManager.readLock.lock();
+		List<String> busesList = new ArrayList<>(); 
+		
+		this.buses.keySet().stream().sorted().forEach(k -> {
+			Bus preBus = null; 
+			Bus postBus = null;
+			Bus curBus = null;
+			Bus noBus = new Bus();
+			noBus.name = "NOBUS";
+			noBus.location = 0;	
+			for(int i = 0 ; i < buses.size(); i++) {
+				Bus bus = buses.get(i);
+				if(bus.name.equals(k)) {
+					curBus = bus;
+					if(buses.size() == 1) {
+						preBus = noBus;
+						postBus = noBus;
+					}
+					if(i == 0) {
+						preBus = buses.get(i+1);
+						postBus = noBus;
+					} else if(i == buses.size() - 1) {
+						preBus = noBus;
+						postBus = buses.get(i-1);
+					} else {
+						preBus = buses.get(i+1);
+						postBus = buses.get(i-1);
+					}
+					break;
+				} else {
+					continue;
+				}
+				
+			}
+			
+			int prediff = preBus.location - curBus.location <  0 ? 0 : preBus.location - curBus.location ;
+			int postdiff = curBus.location - postBus.location <  0 ? 0 : curBus.location - postBus.location;
+			String str = String.format("%s#%s#%s,%05d#%s,%05d\n", 
+					curBus.getTime().toString(), curBus.name, preBus.name, preBus.name.equals("NOBUS") ? 0 : prediff, postBus.name, postBus.name.equals("NOBUS") ? 0 : postdiff);
+			
+			busesList.add(str);
+		});
+		RunManager.readLock.unlock();
+		return busesList;
+	}
+	
 	/** 
 	 * 선후행 버스 목록 출력
 	 * @param buses
 	 */
-	public void printPrePostBusInfo(List<Bus> buses) {
+	public void printPrePostBusInfo(List<String> buses) {
 		RunManager.readLock.lock();
 		try {
 			Path path = Paths.get("./OUTFILE/PREPOST.TXT");
@@ -201,45 +274,10 @@ public class BusManager {
 				Files.delete(path);
 			} 
 			
-			this.buses.keySet().stream().sorted().forEach(k -> {
-				Bus preBus = null; 
-				Bus postBus = null;
-				Bus curBus = null;
-				Bus noBus = new Bus();
-				noBus.name = "NOBUS";
-				noBus.location = 0;	
-				for(int i = 0 ; i < buses.size(); i++) {
-					Bus bus = buses.get(i);
-					if(bus.name.equals(k)) {
-						curBus = bus;
-						if(buses.size() == 1) {
-							preBus = noBus;
-							postBus = noBus;
-						}
-						if(i == 0) {
-							preBus = buses.get(i+1);
-							postBus = noBus;
-						} else if(i == buses.size() - 1) {
-							preBus = noBus;
-							postBus = buses.get(i-1);
-						} else {
-							preBus = buses.get(i+1);
-							postBus = buses.get(i-1);
-						}
-						break;
-					} else {
-						continue;
-					}
-					
-				}
-				
-				int prediff = preBus.location - curBus.location <  0 ? 0 : preBus.location - curBus.location ;
-				int postdiff = curBus.location - postBus.location <  0 ? 0 : curBus.location - postBus.location;
-				String str = String.format("%s#%s#%s,%05d#%s,%05d\n", 
-						curBus.getTime().toString(), curBus.name, preBus.name, preBus.name.equals("NOBUS") ? 0 : prediff, postBus.name, postBus.name.equals("NOBUS") ? 0 : postdiff);
+			buses.stream().forEach(k -> {				
 				
 				try {
-					Files.write(path, str.getBytes(),  StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+					Files.write(path, k.getBytes(),  StandardOpenOption.APPEND,StandardOpenOption.CREATE);
 				} catch(Exception e) {e.printStackTrace();}
 			});
 		} catch(Exception e) {e.printStackTrace();}

@@ -13,6 +13,8 @@ public class Bus {
 	
 	public void setSpeed(Optional<Bus> prevBus) {
 		prevBus.ifPresent(o->{
+			
+			
 			long timeGap = (this.time.getTime() - o.time.getTime()) / 1000;
 			this.speed = (int)((this.location - o.location) / timeGap);
 		});

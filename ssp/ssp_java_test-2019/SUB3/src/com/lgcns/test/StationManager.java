@@ -16,9 +16,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 
 public class StationManager {
 	
-	ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock();
-	ReadLock readLock = reentrantReadWriteLock.readLock();
-	WriteLock writeLock = reentrantReadWriteLock.writeLock();
 	
 	public List<Station> stations = new ArrayList<Station>();
 	private static StationManager instance;

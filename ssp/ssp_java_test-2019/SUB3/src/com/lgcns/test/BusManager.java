@@ -163,11 +163,63 @@ public class BusManager {
 		return collect;
 	}
 	
+	/**
+	 * 선후행 버스 목록을 string으로 변환 
+	 * @param buses
+	 * @return
+	 */
+	public List<String> transformPrePostBusInfoToString(List<Bus> buses) {
+		RunManager.readLock.lock();
+		List<String> busesList = new ArrayList<>(); 
+		
+		this.buses.keySet().stream().sorted().forEach(k -> {
+			Bus preBus = null; 
+			Bus postBus = null;
+			Bus curBus = null;
+			Bus noBus = new Bus();
+			noBus.name = "NOBUS";
+			noBus.location = 0;	
+			for(int i = 0 ; i < buses.size(); i++) {
+				Bus bus = buses.get(i);
+				if(bus.name.equals(k)) {
+					curBus = bus;
+					if(buses.size() == 1) {
+						preBus = noBus;
+						postBus = noBus;
+					}
+					if(i == 0) {
+						preBus = buses.get(i+1);
+						postBus = noBus;
+					} else if(i == buses.size() - 1) {
+						preBus = noBus;
+						postBus = buses.get(i-1);
+					} else {
+						preBus = buses.get(i+1);
+						postBus = buses.get(i-1);
+					}
+					break;
+				} else {
+					continue;
+				}
+				
+			}
+			
+			int prediff = preBus.location - curBus.location <  0 ? 0 : preBus.location - curBus.location ;
+			int postdiff = curBus.location - postBus.location <  0 ? 0 : curBus.location - postBus.location;
+			String str = String.format("%s#%s#%s,%05d#%s,%05d\n", 
+					curBus.getTime().toString(), curBus.name, preBus.name, preBus.name.equals("NOBUS") ? 0 : prediff, postBus.name, postBus.name.equals("NOBUS") ? 0 : postdiff);
+			
+			busesList.add(str);
+		});
+		RunManager.readLock.unlock();
+		return busesList;
+	}
+	
 	/** 
 	 * 선후행 버스 목록 출력
 	 * @param buses
 	 */
-	public void printPrePostBusInfo(List<Bus> buses) {
+	public void printPrePostBusInfo(List<String> buses) {
 		RunManager.readLock.lock();
 		try {
 			Path path = Paths.get("./OUTFILE/PREPOST.TXT");
@@ -175,45 +227,10 @@ public class BusManager {
 				Files.delete(path);
 			} 
 			
-			this.buses.keySet().stream().sorted().forEach(k -> {
-				Bus preBus = null; 
-				Bus postBus = null;
-				Bus curBus = null;
-				Bus noBus = new Bus();
-				noBus.name = "NOBUS";
-				noBus.location = 0;	
-				for(int i = 0 ; i < buses.size(); i++) {
-					Bus bus = buses.get(i);
-					if(bus.name.equals(k)) {
-						curBus = bus;
-						if(buses.size() == 1) {
-							preBus = noBus;
-							postBus = noBus;
-						}
-						if(i == 0) {
-							preBus = buses.get(i+1);
-							postBus = noBus;
-						} else if(i == buses.size() - 1) {
-							preBus = noBus;
-							postBus = buses.get(i-1);
-						} else {
-							preBus = buses.get(i+1);
-							postBus = buses.get(i-1);
-						}
-						break;
-					} else {
-						continue;
-					}
-					
-				}
-				
-				int prediff = preBus.location - curBus.location <  0 ? 0 : preBus.location - curBus.location ;
-				int postdiff = curBus.location - postBus.location <  0 ? 0 : curBus.location - postBus.location;
-				String str = String.format("%s#%s#%s,%05d#%s,%05d\n", 
-						curBus.getTime().toString(), curBus.name, preBus.name, preBus.name.equals("NOBUS") ? 0 : prediff, postBus.name, postBus.name.equals("NOBUS") ? 0 : postdiff);
+			buses.stream().forEach(k -> {				
 				
 				try {
-					Files.write(path, str.getBytes(),  StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+					Files.write(path, k.getBytes(),  StandardOpenOption.APPEND,StandardOpenOption.CREATE);
 				} catch(Exception e) {e.printStackTrace();}
 			});
 		} catch(Exception e) {e.printStackTrace();}
