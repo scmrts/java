@@ -48,12 +48,16 @@ public class RunManager {
 		if(Files.exists(path2)) {
 			Files.delete(path2);
 		} 
+		Path path3 = Paths.get("./OUTFILE/SIGNAGE.TXT");
+		if(Files.exists(path3)) {
+			Files.delete(path3);
+		} 
 		
 		Files.lines(Paths.get("./INFILE/LOCATION.TXT")).forEach(o -> {
 			if(o.equals("PRINT")) {
 				String time = before.value.split("#")[0];
 				Date currentTime = RunManager.transformToDate(time);
-				busManager.transformPrePostBusInfo(busManager.getPrePostBusInfo(currentTime)).forEach(s -> {
+				busManager.transformPrePostBusInfo(currentTime).forEach(s -> {
 					try {
 						Files.write(path, s.getBytes(), StandardOpenOption.APPEND,StandardOpenOption.CREATE);
 					} catch (IOException e) {
@@ -67,11 +71,18 @@ public class RunManager {
 						e.printStackTrace();
 					}
 				});;
+				busManager.transformFastestBusToStations(currentTime).forEach(s -> {
+					try {
+						Files.write(path3, s.getBytes(), StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				});
 			} else {
 				String[] info = o.split("#");
 				Date currentTime = RunManager.transformToDate(info[0]);
 				Stream<String> stream = Arrays.stream(info);
-				stream.skip(1).forEach(s-> busManager.push(currentTime, s));
+				stream.skip(1).forEach(s-> busManager.push(currentTime, s, false));
 				before.value = o;
 			}
 		});

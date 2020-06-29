@@ -67,7 +67,6 @@ public class RunManager {
 				} 
 				stationManager.stations.forEach(s -> {
 					stationManager.printNearestBusWithArraivalTime(s, RunManager.transformToDate(time));
-					
 				});
 				
 			} else {

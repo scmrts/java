@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 
@@ -24,6 +25,17 @@ public class StationManager {
 		return instance;
 	}
 	
+	public List<Station> getStations() {
+		return stations;
+	}
+	
+	public Optional<Station> getPreviousStation(Station station) {
+		
+		Optional<Station> collect = this.stations.stream().filter(o -> o.getLocation() < station.getLocation()).collect(Collectors.maxBy(Comparator.comparing(Station::getLocation)));
+		
+		return collect;
+	}
+	
 	private StationManager() {
 		try {
 			Files.lines(Paths.get("./INFILE/STATION.TXT")).forEach(line -> this.push(line));
@@ -36,6 +48,7 @@ public class StationManager {
 		Station e = new Station();
 		e.setName(line[0]);
 		e.setLocation(Integer.parseInt(line[1]));
+		e.setSpeed(Integer.parseInt(line[2]));
 		this.stations.add(e);
 	}
 	
@@ -49,21 +62,21 @@ public class StationManager {
 	}
 
 	/**
-	 * ¹ö½º À§Ä¡ Á÷Àü Á¤·ùÀå Á¶È¸
+	 * íŠ¹ì • ë²„ìŠ¤ì˜ ì§ì „ ë²„ìŠ¤ ì •ìœ ìž¥
 	 * @param bus
 	 * @return
 	 */
-	public Station getPreviousStationFromBus(Bus bus) {
-		return this.stations.stream().filter(o -> o.getLocation() < bus.getLocation()).collect(Collectors.maxBy(Comparator.comparing(Station::getLocation))).orElseGet(Station::new);
+	public Optional<Station> getPreviousStationFromBus(Bus bus) {
+		return this.stations.stream().filter(o -> o.getLocation() < bus.getLocation()).collect(Collectors.maxBy(Comparator.comparing(Station::getLocation)));
 	}
 	
 	/**
-	 * ¹ö½º À§Ä¡ ´ÙÀ½ Á¤·ùÀå Á¶È¸
+	 * íŠ¹ì • ë²„ìŠ¤ì˜ ì§í›„ ë²„ìŠ¤ ì •ìœ ìž¥
 	 * @param bus
 	 * @return
 	 */
-	public Station getNextStationStationFromBus(Bus bus) {
-		return this.stations.stream().filter(o -> o.getLocation() > bus.getLocation()).collect(Collectors.minBy(Comparator.comparing(Station::getLocation))).orElseGet(Station::new);
+	public Optional<Station> getNextStationStationFromBus(Bus bus) {
+		return this.stations.stream().filter(o -> o.getLocation() > bus.getLocation()).collect(Collectors.minBy(Comparator.comparing(Station::getLocation)));
 	}
 
 	

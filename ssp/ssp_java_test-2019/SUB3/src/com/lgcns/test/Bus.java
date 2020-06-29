@@ -2,7 +2,7 @@ package com.lgcns.test;
 
 import java.util.Date;
 
-public class Bus {
+public class Bus implements Cloneable {
 	private String name;
 	private Date time;
 	private int location;
@@ -37,4 +37,13 @@ public class Bus {
 		return String.format("name : %s, time : %s, location : %d, speed : %d", name, time.toString(), location, speed);
 	}
 
+	public Bus copy() {
+		try {
+			return (Bus) this.clone();
+		} catch (CloneNotSupportedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return null;
+	}
 }
