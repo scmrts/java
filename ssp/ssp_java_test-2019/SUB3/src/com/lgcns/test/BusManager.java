@@ -1,9 +1,5 @@
 package com.lgcns.test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -14,6 +10,7 @@ import java.util.Map;
 import java.util.StringJoiner;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 
@@ -37,7 +34,7 @@ public class BusManager {
 		return instance;
 	}
 	
-	public String toString() {
+	public synchronized String toString() {
 		StringJoiner str = new StringJoiner("\n");
 //		this.buses.entrySet().stream().mapToObj(e -> e.getValue().stream().collect(Collectors.joining("\n")));
 		Iterator<Entry<String, List<Bus>>> iterator = this.buses.entrySet().iterator();
@@ -52,25 +49,28 @@ public class BusManager {
 		return str.toString();
 	}
 	
-	public void push(Date time, String busInfo) {
+	public synchronized void push(Date time, String busInfo) {
 		
 		String[] busStr = busInfo.split(",");
-		if(busStr.length != 2) {
-			return;
-		}
 		Bus bus = new Bus();
 		bus.setTime(time);
 		bus.setName(busStr[0]);
 		bus.setLocation(Integer.parseInt(busStr[1]));
 		List<Bus> busList = this.buses.getOrDefault(bus.getName(), Collections.synchronizedList(new ArrayList<Bus>()));
 		busList.add(bus);
+		
+		this.buses.put(bus.getName(), busList);
 		if (busList.size() > 2) {
 			busList.remove(0);
 		}
-		this.buses.put(bus.getName(), busList);
+		this.touch(time);
 	}
 	
-	public List<Bus> getPrePostBusInfo(Date time) {
+	private synchronized void touch(Date time) {
+		
+	}
+	
+	public synchronized List<Bus> getPrePostBusInfo(Date time) {
 		List<Bus> collect = this.buses.entrySet().stream()
 				.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
 				.sorted(locationComparator).collect(Collectors.toList());
@@ -78,8 +78,25 @@ public class BusManager {
 		return collect;
 	}
 	
+	public synchronized Bus[] getPrePostBusInfo(Bus bus, Date time) {
+		List<Bus> prePostBusInfo = this.getPrePostBusInfo(time);
+		Bus noBus = new Bus();
+		noBus.setName("NOBUS");
+		noBus.setTime(time);
+		noBus.setLocation(0);
+		//이전차
+		Bus[] buses = new Bus[2];
+		buses[0] = prePostBusInfo.stream().filter(o -> o.getLocation() < 1).collect(Collectors.maxBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
+			return noBus;
+		});
+		//이후차
+		buses[1] = prePostBusInfo.stream().filter(o -> o.getLocation() > 1).collect(Collectors.minBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
+			return noBus;
+		});
+		return buses;
+	}
 	
-	public List<String> transformPrePostBusInfo(List<Bus> buses) {
+	public synchronized List<String> transformPrePostBusInfo(List<Bus> buses) {
 		List<String> ret = new ArrayList<String>();
 		try {
 			this.buses.keySet().stream().sorted().forEach(k -> {
@@ -125,7 +142,7 @@ public class BusManager {
 		return ret;
 	}
 	
-	public Bus getNearestBusInfoFromStation(Station station, Date time) {
+	public synchronized Bus getNearestBusInfoFromStation(Station station, Date time) {
 		Bus bus = this.getPrePostBusInfo(time).stream().filter(o -> o.getLocation() <= station.getLocation()).max(BusManager.locationComparator).orElseGet(() -> {
 			Bus tmp = new Bus();
 			tmp.setName("NOBUS");
@@ -134,5 +151,15 @@ public class BusManager {
 			return tmp;
 		}) ;
 		return bus;
+	}
+	
+	private synchronized int getEstimatedTimeToGetToTheStation(Bus bus, Station station) {
+		StationManager stationManager = StationManager.getInstance();
+		Station previousStationFromBus = stationManager.getPreviousStationFromBus(bus);
+		Station nextStationStationFromBus = stationManager.getNextStationStationFromBus(bus);
+		
+		bus.getSpeed();
+		
+		return -1;
 	}
 }

@@ -1,5 +1,7 @@
 package com.lgcns.test;
 
+import java.util.Date;
+
 public class Station {
 	private String name;
 	private int location;
@@ -33,5 +35,8 @@ public class Station {
 		this.speed = speed;
 	}
 	
-	
+	public Bus getNearestBus(Date time) {
+		BusManager busManager = BusManager.getInstance();
+		return busManager.getNearestBusInfoFromStation(this, time);
+	}
 }

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -46,6 +47,25 @@ public class StationManager {
 		Bus bus = BusManager.getInstance().getNearestBusInfoFromStation(station, time);
 		return String.format("%s#%s#%s,%05d\n", RunManager.transformToString(bus.getTime()), station.getName(), bus.getName(), station.getLocation() - bus.getLocation());
 	}
+
+	/**
+	 * 버스 위치 직전 정류장 조회
+	 * @param bus
+	 * @return
+	 */
+	public Station getPreviousStationFromBus(Bus bus) {
+		return this.stations.stream().filter(o -> o.getLocation() < bus.getLocation()).collect(Collectors.maxBy(Comparator.comparing(Station::getLocation))).orElseGet(Station::new);
+	}
+	
+	/**
+	 * 버스 위치 다음 정류장 조회
+	 * @param bus
+	 * @return
+	 */
+	public Station getNextStationStationFromBus(Bus bus) {
+		return this.stations.stream().filter(o -> o.getLocation() > bus.getLocation()).collect(Collectors.minBy(Comparator.comparing(Station::getLocation))).orElseGet(Station::new);
+	}
+
 	
 	
 }
