@@ -4,22 +4,17 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
+import java.util.stream.Stream;
 
 import org.omg.CORBA.StringHolder;
 
-
 public class RunManager {
-
-	public static ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock();
-	public static ReadLock readLock = reentrantReadWriteLock.readLock();
-	public static WriteLock writeLock = reentrantReadWriteLock.writeLock();
 	
 	public static Date transformToDate(String time) {
 		SimpleDateFormat transFormat = new SimpleDateFormat("HH:mm:ss");
@@ -31,58 +26,54 @@ public class RunManager {
 		}
 		return null;
 	}
+	
+	public static String transformToString(Date time) {
+		SimpleDateFormat transFormat = new SimpleDateFormat("HH:mm:ss");
+
+		return transFormat.format(time);
+	}
+	
 	public static void main(String[] args) throws IOException {
-		
+		StringHolder before = new StringHolder();;
 		BusManager busManager = BusManager.getInstance();
 		StationManager stationManager = StationManager.getInstance();
 		
-		StringHolder before = new StringHolder();;
+		Path path = Paths.get("./OUTFILE/PREPOST.TXT");
+		if(Files.exists(path)) {
+			Files.delete(path);
+		} 
 		
-		Files.lines(Paths.get("./INFILE/STATION.TXT")).forEach(line -> stationManager.push(line));
+		Path path2 = Paths.get("./OUTFILE/ARRIVAL.TXT");
+		if(Files.exists(path2)) {
+			Files.delete(path2);
+		} 
 		
 		Files.lines(Paths.get("./INFILE/LOCATION.TXT")).forEach(o -> {
 			if(o.equals("PRINT")) {
 				String time = before.value.split("#")[0];
 				Date currentTime = RunManager.transformToDate(time);
-				List<Bus> prePostBusInfo = busManager.getPrePostBusInfo(currentTime);
-				busManager.printPrePostBusInfo(busManager.transformPrePostBusInfoToString(prePostBusInfo));
-				
-				Path path = Paths.get("./OUTFILE/ARRIVAL.TXT");
-				if(Files.exists(path)) {
+				busManager.transformPrePostBusInfo(busManager.getPrePostBusInfo(currentTime)).forEach(s -> {
 					try {
-						Files.delete(path);
+						Files.write(path, s.getBytes(), StandardOpenOption.APPEND,StandardOpenOption.CREATE);
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
-				} 
-				stationManager.stations.stream().forEach(s -> stationManager.printNearestBusInfo(s, s.getNearestBus(currentTime)));
-				
-				Path sigPath = Paths.get("./OUTFILE/SIGNAGE.TXT");
-				if(Files.exists(sigPath)) {
+				});;
+				stationManager.getNearestBusesInfo(currentTime).forEach(s -> {
 					try {
-						Files.delete(sigPath);
+						Files.write(path2, s.getBytes(), StandardOpenOption.APPEND,StandardOpenOption.CREATE);
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
-				} 
-				stationManager.stations.forEach(s -> {
-					stationManager.printNearestBusWithArraivalTime(s, RunManager.transformToDate(time));
-					
-				});
-				
+				});;
 			} else {
-				busManager.push(o);
+				String[] info = o.split("#");
+				Date currentTime = RunManager.transformToDate(info[0]);
+				Stream<String> stream = Arrays.stream(info);
+				stream.skip(1).forEach(s-> busManager.push(currentTime, s));
 				before.value = o;
 			}
 		});
-		
-		System.out.println();
-		
+		System.out.print("");
 	}
-
-	
 }
-
-
-
-
