@@ -5,30 +5,26 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.io.Reader;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
+import java.util.stream.Stream;
 
 import org.omg.CORBA.StringHolder;
 
 
 public class RunManager {
-
-	public static ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock();
-	public static ReadLock readLock = reentrantReadWriteLock.readLock();
-	public static WriteLock writeLock = reentrantReadWriteLock.writeLock();
 	
 	public static Date transformToDate(String time) {
 		SimpleDateFormat transFormat = new SimpleDateFormat("HH:mm:ss");
@@ -41,11 +37,14 @@ public class RunManager {
 		return null;
 	}
 	
-	
+	public static String transformToString(Date time) {
+		SimpleDateFormat transFormat = new SimpleDateFormat("HH:mm:ss");
+
+		return transFormat.format(time);
+	}
 	
 	public static void main(String[] args) throws IOException {
 		
-//		BusManager busManager = BusManager.getInstance();
 		StationManager stationManager = StationManager.getInstance();
 		Files.lines(Paths.get("./INFILE/STATION.TXT")).forEach(line -> stationManager.push(line));
 		try(ServerSocket serverSocket = new ServerSocket(9876)) {
@@ -62,8 +61,65 @@ public class RunManager {
 				} 
 			}
 		}
-	}
+		
+		
+//		
+//		StringHolder before = new StringHolder();;
+//		BusManager busManager = BusManager.getInstance();
+//		StationManager stationManager = StationManager.getInstance();
+//		
+//		Path path = Paths.get("./OUTFILE/PREPOST.TXT");
+//		if(Files.exists(path)) {
+//			Files.delete(path);
+//		} 
+//		
+//		Path path2 = Paths.get("./OUTFILE/ARRIVAL.TXT");
+//		if(Files.exists(path2)) {
+//			Files.delete(path2);
+//		} 
+//		Path path3 = Paths.get("./OUTFILE/SIGNAGE.TXT");
+//		if(Files.exists(path3)) {
+//			Files.delete(path3);
+//		} 
+//		
+//		Files.lines(Paths.get("./INFILE/LOCATION.TXT")).forEach(o -> {
+//			if(o.equals("PRINT")) {
+//				String time = before.value.split("#")[0];
+//				Date currentTime = RunManager.transformToDate(time);
+//				busManager.transformPrePostBusInfo(currentTime).forEach(s -> {
+//					try {
+//						Files.write(path, s.getBytes(), StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+//					} catch (IOException e) {
+//						e.printStackTrace();
+//					}
+//				});;
+//				stationManager.getNearestBusesInfo(currentTime).forEach(s -> {
+//					try {
+//						Files.write(path2, s.getBytes(), StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+//					} catch (IOException e) {
+//						e.printStackTrace();
+//					}
+//				});;
+//				busManager.transformFastestBusToStations(currentTime).forEach(s -> {
+//					try {
+//						Files.write(path3, s.getBytes(), StandardOpenOption.APPEND,StandardOpenOption.CREATE);
+//					} catch (IOException e) {
+//						e.printStackTrace();
+//					}
+//				});
+//			} else {
+//				String[] info = o.split("#");
+//				Date currentTime = RunManager.transformToDate(info[0]);
+//				Stream<String> stream = Arrays.stream(info);
+//				stream.skip(1).forEach(s-> busManager.push(currentTime, s, false));
+//				before.value = o;
+//			}
+//		});
+//		System.out.print("");
 
+	}
+	
+	
 	private static class ClientService implements Runnable{
 
 		private Socket socket;
@@ -76,20 +132,21 @@ public class RunManager {
 				BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()))) {
 				
 				String readLine = null;
-				String busName = null;
+//				String busName = null;
+				StringHolder busName = new StringHolder();
 				BusManager busManager = BusManager.getInstance();
+				Date lastUpdateTime = null;
+				StationManager stationManager = StationManager.getInstance();
 				while((readLine = reader.readLine()) != null) {
-					writeLock.lock();
 					System.out.println("readLine    --> " +busName+"  "+readLine);
 					if(readLine.startsWith("BUS")) {
-						busName = readLine;
+						busName.value = readLine;
 					} else if(readLine.startsWith("MOBILE")) {
 						
 					} else if(readLine.startsWith("STA")) {
 						
 					} else if(readLine.startsWith("PRINT")) {
-						Date lastUpdateTime = busManager.getLastUpdateTime();
-						List<String> prePostBusInfo = busManager.transformPrePostBusInfoToString(busManager.getPrePostBusInfo(lastUpdateTime));
+						List<String> prePostBusInfo = busManager.transformPrePostBusInfo(busManager.getCurrentTime());
 						prePostBusInfo.stream().forEach(t -> {
 							try {
 								writer.write(t);
@@ -97,15 +154,29 @@ public class RunManager {
 								e.printStackTrace();
 							}
 						});
+						stationManager.getNearestBusesInfo(busManager.getCurrentTime()).forEach(s -> {
+							try {
+								writer.write(s);
+							} catch (IOException e) {
+								e.printStackTrace();
+							}
+						});
+						busManager.transformFastestBusToStations(busManager.getCurrentTime()).forEach(s -> {
+							try {
+								writer.write(s);
+							} catch (IOException e) {
+								e.printStackTrace();
+							}
+						});
 					} else {
-						String[] split = readLine.split("#");
-						if(split.length > 1) {
-							busManager.push(String.format("%s#%s,%s", split[0], busName, split[1]));
-						} else {
-							busManager.push(readLine);
-						}
+						
+						String[] info = readLine.split("#");
+						Date currentTime = RunManager.transformToDate(info[0]);
+						busManager.setCurrentTime(currentTime);
+						Stream<String> stream = Arrays.stream(info);
+						stream.skip(1).forEach(s-> busManager.push(currentTime, busName.value + "," + s, false));
+						System.out.print("");
 					} 
-					writeLock.unlock();
 				}
 				
 			} catch (IOException e) {
@@ -115,7 +186,3 @@ public class RunManager {
 		
 	}
 }
-
-
-
-

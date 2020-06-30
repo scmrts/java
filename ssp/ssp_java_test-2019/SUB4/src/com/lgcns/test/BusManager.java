@@ -1,58 +1,43 @@
 package com.lgcns.test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.StringJoiner;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 import java.util.stream.Collectors;
 
+
 public class BusManager {
+	
+	private Map<String, List<Bus>> buses = new ConcurrentHashMap<String, List<Bus>>();
 
-//	ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock();
-//	ReadLock readLock = reentrantReadWriteLock.readLock();
-//	WriteLock writeLock = reentrantReadWriteLock.writeLock();
-	public Map<String, List<Bus>> buses = new ConcurrentHashMap<String, List<Bus>>();
-
-private Date lastUpdateTime;
+	private Date currentTime;
 	
-	public static Comparator<Bus> timeComparator = (o1, o2) -> o1.time.compareTo(o2.time); 
+	public static Comparator<Bus> timeComparator = (o1, o2) -> o1.getTime().compareTo(o2.getTime()); 
 	
-	public static Comparator<Bus> locationComparator = (o1, o2) ->o1.location - o2.location;
+	public static Comparator<Bus> locationComparator = (o1, o2) ->o1.getLocation() - o2.getLocation();
 	
-	public static Comparator<Bus> nameComparator = (o1, o2) ->o1.name.compareTo(o2.name);
+	public static Comparator<Bus> nameComparator = Comparator.comparing(Bus::getName);//(o1, o2) ->o1.getName().compareTo(o2.getName());
 	
 	private static BusManager instance;
 	
-	
 	public static synchronized BusManager getInstance() {
-        if ( instance == null ) {
-            instance = new BusManager();
-        }
-        return instance;
-    }
+		if(instance == null) {
+			instance = new BusManager();
+		}
+		
+		return instance;
+	}
 	
-	public String toString() {
-		RunManager.readLock.lock();
+	public synchronized String toString() {
 		StringJoiner str = new StringJoiner("\n");
-//		this.buses.entrySet().stream().mapToObj(e -> e.getValue().stream().collect(Collectors.joining("\n")));
 		Iterator<Entry<String, List<Bus>>> iterator = this.buses.entrySet().iterator();
 		while(iterator.hasNext()) {
 			
@@ -62,228 +47,241 @@ private Date lastUpdateTime;
 			next.getValue().stream().forEach(o -> busstr.add(o.toString()));
 			str.add(busstr.toString());
 		}
-		RunManager.readLock.unlock();
 		return str.toString();
 	}
 	
-	
-	public Date getLastUpdateTime() {
-		RunManager.readLock.lock();
-		Date date = this.lastUpdateTime;
-		RunManager.readLock.unlock();
-		return date;
-		
-	}
-	
-	public void setLastUpdateTime(Date date) {
-		RunManager.writeLock.lock();
-		this.lastUpdateTime = date;
-		RunManager.writeLock.unlock();
-	}
-	
-	/**
-	 * 한줄을 읽어서 buses에 추가한다.
-	 * @param curLine
-	 */
-	public void push(String curLine) {
-		RunManager.writeLock.lock();
-		String[] line = curLine.split("#");
-		if(line.length > 1) {
-			String time = line[0];
-			List<Bus> buses = Arrays.stream(line).skip(1).map(o ->  {
-				Bus bus = new Bus();
-				String[] businfo = o.split(",");
-				bus.name = businfo[0];
-				bus.location = Integer.parseInt(businfo[1]);
-				SimpleDateFormat transFormat = new SimpleDateFormat("HH:mm:ss");
-	
-				try {
-					bus.time = transFormat.parse(time);
-				} catch (ParseException e) {
-					e.printStackTrace();
-				}
-				return bus;
-			}).collect(Collectors.toList());;
-			buses.sort(locationComparator);
-			
-			buses.forEach(o -> BusManager.this.touch(o));
+	public synchronized void push(Date time, Bus busInfo, boolean isTouch) {
+		List<Bus> busList = this.buses.getOrDefault(busInfo.getName(), Collections.synchronizedList(new ArrayList<Bus>()));
+		if(busList.size() > 0 && !isTouch) {
+			Bus bus2 = busList.get(busList.size() - 1);
+			int timeGap = ((int) (busInfo.getTime().getTime() - bus2.getTime().getTime())) / 1000;
+			int locationGap = busInfo.getLocation() - bus2.getLocation();
+			int speed = locationGap / timeGap;
+			busInfo.setSpeed(speed);
 		}
-		BusManager busManager = BusManager.getInstance();
-		busManager.touch(RunManager.transformToDate(line[0]));
+		busList.add(busInfo);
 		
-		System.out.println("###############################################################1");
-		System.out.println(this);
-		System.out.println("###############################################################2");
-		RunManager.writeLock.unlock();
+		this.buses.put(busInfo.getName(), busList);
+		if (busList.size() > 2) {
+			busList.remove(0);
+		}
+	}
+	public synchronized void push(Date time, String busInfo, boolean isTouch) {
+		String[] busStr = busInfo.split(",");
+		if(busStr.length < 2) return;
+		Bus bus = new Bus();
+		bus.setTime(time);
+		bus.setName(busStr[0]);
+		bus.setLocation(Integer.parseInt(busStr[1]));
+		this.push(time, bus, false);
 	}
 	
-	/**
-	 * 특정 시간에 버스 위치를 추정
-	 * @param curTime
-	 */
-	private void touch(Date curTime) {
-		RunManager.writeLock.lock();
-		BusManager busManager = BusManager.getInstance();
-		busManager.buses.entrySet().stream().forEach(e -> {
-			/**
-			 * 해당 시간에 버스 정보가 없으면 현재 시간에 맞는 버스 위치를 만들어 buses를 업데이트 한다. 
-			 */
-			Date d = curTime;
-			
-			if(e.getValue().stream().noneMatch(o -> o.time.getTime() == curTime.getTime())) {
-				List<Bus> curBus = e.getValue();
-				if(curBus.size() >= 2) {
-					Bus prev = curBus.get(0);
-					Bus next = curBus.get(1);
-					
 	
-					Bus bus = new Bus();
-					bus.name = e.getKey();
-					bus.location = next.location;
-					bus.time = curTime;
-					bus.speed = next.speed;
-					int timeGap = (int) (curTime.getTime() - next.time.getTime()) / 1000;
-					System.out.print("");
-					Station beforeStation = StationManager.getInstance().stations.stream().filter(s -> s.location < next.location).max((a, b) -> a.location - b.location).orElseGet(Station::new);
-					
-					List<Station> stations = StationManager.getInstance().stations.stream().filter(s -> s.location >= beforeStation.location).collect(Collectors.toList());
-					
-					
-					while(timeGap > 0 ) {
-						for(Station station : stations) {
-							bus.location += Math.min(bus.speed, station.speed);
-							if(--timeGap <= 0) {
-								break;
-							}
-							
-							if(bus.location >= station.location) {
-								continue;
-							}
-						}
-					}
-					this.touch(bus, true);
-				}
-			}
-		});
-		RunManager.writeLock.unlock();
-	}
-
-	public void touch(Bus bus) {
-		RunManager.writeLock.lock();
-		this.touch(bus, false);
-		RunManager.writeLock.unlock();
-	}
-	
-	/**
-	 * 최신 버스 정보 buses 업데이트
-	 * @param bus
-	 */
-	private void touch(Bus bus, boolean isAuto) {
-		RunManager.writeLock.lock();
-		List<Bus> old = this.buses.getOrDefault(bus.name, new ArrayList<Bus>());
-		if(old.size() == 0) {
-			this.buses.put(bus.name, old);
-		} 
+	public synchronized List<Bus> getPrePostBusInfo(Date time) {
+//		List<Bus> collect = this.buses.entrySet().stream()
+//				.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
+//				.sorted(locationComparator).collect(Collectors.toList());
 		
-		if(! isAuto) {
-			bus.setSpeed(old.stream().sorted(BusManager.timeComparator).findFirst());
-		}
-		old.add(bus);
-		if(old.size() == 3) {
-			old.remove(0);
-		}
-		this.buses.put(bus.name,  old);
-		RunManager.writeLock.unlock();
-	}
-	
-	/**
-	 * 선후행 버스 목록 조회
-	 * @param time
-	 * @return
-	 */
-	public List<Bus> getPrePostBusInfo(Date time) {
-		RunManager.readLock.lock();
 		List<Bus> collect = this.buses.entrySet().stream()
-				.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
-				.sorted(locationComparator).collect(Collectors.toList());
-		RunManager.readLock.unlock();
+		.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
+		.sorted(locationComparator).map(e -> this.getBusWithPredictedLocationAtTheTime(e, time)).collect(Collectors.toList());
+		
+		
 		return collect;
 	}
 	
-	/**
-	 * 선후행 버스 목록을 string으로 변환 
-	 * @param buses
-	 * @return
-	 */
-	public List<String> transformPrePostBusInfoToString(List<Bus> buses) {
-		RunManager.readLock.lock();
-		List<String> busesList = new ArrayList<>(); 
+	public synchronized Bus[] getPrePostBusInfo(Bus bus, Date time) {
+		List<Bus> prePostBusInfo = this.getPrePostBusInfo(time);
+		Bus noBus = new Bus();
+		noBus.setName("NOBUS");
+		noBus.setTime(time);
+		noBus.setLocation(0);
+		//직전
+		Bus[] buses = new Bus[2];
+		buses[0] = prePostBusInfo.stream().filter(o -> o.getLocation() < bus.getLocation()).collect(Collectors.maxBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
+			return noBus;
+		});
+		//직후
+		buses[1] = prePostBusInfo.stream().filter(o -> o.getLocation() > bus.getLocation()).collect(Collectors.minBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
+			return noBus;
+		});
+		return buses;
+	}
+	
+	public synchronized List<String> transformPrePostBusInfo(Date currentTime) {
+		List<String> ret = new ArrayList<String>();
+		this.getPrePostBusInfo(currentTime).stream().sorted(Comparator.comparing(Bus::getName)).forEach(o -> {
+			Bus[] buses = this.getPrePostBusInfo(o, currentTime);
+			int prediff = buses[1].getLocation() - o.getLocation()  <  0 ? 0 : buses[1].getLocation() - o.getLocation();
+			int postdiff = o.getLocation() -  buses[0].getLocation() <  0 ? 0 : o.getLocation() -  buses[0].getLocation();
+			
+			String str = String.format("%s#%s#%s,%05d#%s,%05d\n", 
+					RunManager.transformToString(o.getTime()), o.getName(), buses[1].getName(), buses[1].getName().equals("NOBUS") ? 0 : prediff, buses[0].getName(), buses[0].getName().equals("NOBUS") ? 0 : postdiff);
+			ret.add(str);
+		});
+		return ret;
+	}
+
+	
+	public synchronized Bus getNearestBusInfoFromStation(Station station, Date time) {
+		Bus bus = this.getPrePostBusInfo(time).stream().filter(o -> o.getLocation() <= station.getLocation()).max(BusManager.locationComparator).orElseGet(() -> {
+			Bus tmp = new Bus();
+			tmp.setName("NOBUS");
+			tmp.setTime(time);
+			
+			return tmp;
+		}) ;
+		return bus;
+	}
+	
+	private synchronized Arrival getFastestBusToStation(Station station) {
+		Bus min = null;
+		int rm = Integer.MAX_VALUE;
+		for(Iterator iter = this.buses.keySet().iterator() ; iter.hasNext() ; ) {
+			List<Bus> busList = this.buses.get(iter.next());
+			busList.sort(BusManager.locationComparator);
+			Bus bus = busList.get(busList.size() -1);
+			int estimatedTimeToGetToTheStation = this.getEstimatedTimeToGetToTheStation(bus.copy(), station, 0);
+			
+			if(rm >= estimatedTimeToGetToTheStation && estimatedTimeToGetToTheStation >= 0) {
+				rm = estimatedTimeToGetToTheStation;
+				min = bus;
+			}
+
+		}
+		if(min == null) {
+			min = new Bus();
+			min.setName("NOBUS");
+			min.setLocation(0);
+			min.setTime(RunManager.transformToDate("00:00:00"));
+			Arrival ar = new Arrival(station, min, RunManager.transformToDate("00:00:00"));
+			return ar;
+		} else {
+			Date date = new Date(min.getTime().getTime() + rm * 1000);
+			Arrival ar = new Arrival(station, min, date);
+			return ar;
+		}
+	}
+	
+	private synchronized Bus getBusWithPredictedLocationAtTheTime(Bus bus, Date curTime) {
+		BusManager busManager = BusManager.getInstance();
+
+
+		Bus newBus = bus.copy();
+		newBus.setTime(curTime);
+		int timeGap = (int) (curTime.getTime() - newBus.getTime().getTime()) / 1000;
 		
-		this.buses.keySet().stream().sorted().forEach(k -> {
-			Bus preBus = null; 
-			Bus postBus = null;
-			Bus curBus = null;
-			Bus noBus = new Bus();
-			noBus.name = "NOBUS";
-			noBus.location = 0;	
-			for(int i = 0 ; i < buses.size(); i++) {
-				Bus bus = buses.get(i);
-				if(bus.name.equals(k)) {
-					curBus = bus;
-					if(buses.size() == 1) {
-						preBus = noBus;
-						postBus = noBus;
+		Optional<Station> beforeStation = StationManager.getInstance().stations.stream().filter(s -> s.getLocation() < newBus.getLocation()).max((a, b) -> a.getLocation() - b.getLocation());
+		if(beforeStation.isPresent()) {
+			Station before = beforeStation.get();
+			List<Station> stations = StationManager.getInstance().stations.stream().filter(s -> s.getLocation() >= before.getLocation()).collect(Collectors.toList());
+			
+			
+			while(timeGap > 0 ) {
+				for(Station station : stations) {
+					newBus.setLocation(newBus.getLocation() + Math.min(newBus.getSpeed(), station.getSpeed()));
+					if(--timeGap <= 0) {
+						break;
 					}
-					if(i == 0) {
-						preBus = buses.get(i+1);
-						postBus = noBus;
-					} else if(i == buses.size() - 1) {
-						preBus = noBus;
-						postBus = buses.get(i-1);
-					} else {
-						preBus = buses.get(i+1);
-						postBus = buses.get(i-1);
+					
+					if(before.getLocation()  >= station.getLocation()) {
+						continue;
 					}
+				}
+			}
+		} else {
+			while(timeGap > 0 ) {
+				newBus.setLocation(newBus.getLocation() + newBus.getSpeed());
+				if(--timeGap <= 0) {
 					break;
-				} else {
-					continue;
 				}
 				
 			}
-			
-			int prediff = preBus.location - curBus.location <  0 ? 0 : preBus.location - curBus.location ;
-			int postdiff = curBus.location - postBus.location <  0 ? 0 : curBus.location - postBus.location;
-			String str = String.format("%s#%s#%s,%05d#%s,%05d\n", 
-					curBus.getTime().toString(), curBus.name, preBus.name, preBus.name.equals("NOBUS") ? 0 : prediff, postBus.name, postBus.name.equals("NOBUS") ? 0 : postdiff);
-			
-			busesList.add(str);
-		});
-		RunManager.readLock.unlock();
-		return busesList;
+		}
+		return newBus;
 	}
 	
-	/** 
-	 * 선후행 버스 목록 출력
-	 * @param buses
-	 */
-	public void printPrePostBusInfo(List<String> buses) {
-		RunManager.readLock.lock();
-		try {
-			Path path = Paths.get("./OUTFILE/PREPOST.TXT");
-			if(Files.exists(path)) {
-				Files.delete(path);
-			} 
+	private synchronized int getEstimatedTimeToGetToTheStation(Bus bus, Station station, int needTime) { 
+		if(bus.getLocation() > station.getLocation()) return -1;
+		
+		StationManager stationManager = StationManager.getInstance();
+		int remain = 0;
+		while(true) {
+			Optional<Station> nextStationFromBus = stationManager.getNextStationStationFromBus(bus);
+			Station next = null;
+			if(nextStationFromBus.isPresent()) {
+				next = nextStationFromBus.get();
+			} else {
+				next = stationManager.getStations().stream().max(Comparator.comparing(Station::getLocation)).orElseGet(null);
+			}
+			if(station.getName().equals(next.getName())) {
+				int speed = Math.min(station.getSpeed(), bus.getSpeed());
+				if (speed == 0)  {
+					speed = bus.getSpeed();
+				}
+				remain += (next.getLocation() - bus.getLocation()) / speed;
+				bus.setLocation(next.getLocation());
+				break;
+			}
+			Optional<Station> prevStationFromBus = stationManager.getPreviousStationFromBus(bus);
+			int speed = 0;
 			
-			buses.stream().forEach(k -> {				
-				
-				try {
-					Files.write(path, k.getBytes(),  StandardOpenOption.APPEND,StandardOpenOption.CREATE);
-				} catch(Exception e) {e.printStackTrace();}
-			});
-		} catch(Exception e) {e.printStackTrace();}
-		finally {
-			RunManager.readLock.unlock();
+			if(prevStationFromBus.isPresent()) {
+				Station prev = prevStationFromBus.get();
+				speed = Math.min(prev.getSpeed(), bus.getSpeed());
+			} else {
+				speed = bus.getSpeed();
+			}
+			remain += (next.getLocation() - bus.getLocation()) / speed;
+			bus.setLocation(next.getLocation());
 		}
 		
+		
+		return remain;
+	}
+	
+	public synchronized List<String> transformFastestBusToStations(Date curTime) {
+		List<Arrival> arrivals = this.getFastestBusToStations();
+		List<String> ret = new ArrayList<String>();
+		arrivals.stream().forEach(o -> {
+			String str = String.format("%s#%s#%s,%s\n", 
+					RunManager.transformToString(curTime), o.getStation().getName(), o.getBus().getName(), RunManager.transformToString(o.getEstimatedTime()));
+			ret.add(str);
+		});
+		return ret;
+	}
+	
+	public synchronized List<Arrival> getFastestBusToStations() {
+		StationManager stationManager = StationManager.getInstance();
+		
+		List<Station> stations = stationManager.getStations();
+		List<Arrival> collect = stations.stream().map(this::getFastestBusToStation).collect(Collectors.toList());
+		return collect;
+	}
+	
+	
+	
+//	public static void main(String[] args) {
+////		StationManager stationManager = StationManager.getInstance();
+//		Bus bus = new Bus();
+//		bus.setLocation(900);
+//		bus.setName("BUS01");
+//		bus.setTime(RunManager.transformToDate("00:00:05"));
+//		bus.setSpeed(10);
+//		Station e = new Station();
+//		e.setName("STA05");
+//		e.setLocation(4620);
+//		e.setSpeed(72);
+//		BusManager busManager = BusManager.getInstance();
+//		int estimatedTimeToGetToTheStation = busManager.getEstimatedTimeToGetToTheStation(bus, e);
+//		System.out.println(estimatedTimeToGetToTheStation);
+//		
+//	}
+	public synchronized void setCurrentTime(Date date) {
+		this.currentTime = date;
+	}
+	
+	public synchronized Date getCurrentTime( ) {
+		return this.currentTime;
 	}
 }

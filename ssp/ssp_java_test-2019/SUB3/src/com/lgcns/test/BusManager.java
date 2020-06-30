@@ -11,7 +11,6 @@ import java.util.StringJoiner;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 
@@ -76,13 +75,14 @@ public class BusManager {
 	
 	
 	public synchronized List<Bus> getPrePostBusInfo(Date time) {
-		
-		
-		
+//		List<Bus> collect = this.buses.entrySet().stream()
+//				.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
+//				.sorted(locationComparator).collect(Collectors.toList());
 		
 		List<Bus> collect = this.buses.entrySet().stream()
-				.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
-				.sorted(locationComparator).collect(Collectors.toList());
+		.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
+		.sorted(locationComparator).map(e -> this.getBusWithPredictedLocationAtTheTime(e, time)).collect(Collectors.toList());
+		
 		
 		return collect;
 	}
@@ -109,7 +109,6 @@ public class BusManager {
 		List<String> ret = new ArrayList<String>();
 		this.getPrePostBusInfo(currentTime).stream().sorted(Comparator.comparing(Bus::getName)).forEach(o -> {
 			Bus[] buses = this.getPrePostBusInfo(o, currentTime);
-			//11:00:06#BUS01#BUS03,05370#BUS02,01230
 			int prediff = buses[1].getLocation() - o.getLocation()  <  0 ? 0 : buses[1].getLocation() - o.getLocation();
 			int postdiff = o.getLocation() -  buses[0].getLocation() <  0 ? 0 : o.getLocation() -  buses[0].getLocation();
 			
@@ -161,19 +160,42 @@ public class BusManager {
 		}
 	}
 	
-	private synchronized int getEstimatedTimeToTheLocation(Bus bus, int location, int needTime) {
-		if(bus.getLocation() > location) return -1;
-		while(true) {
-			//버스위치보다 목적지 위치가 큰 경우 처리
-			//반복 시작
-			//버스위치보다 크고 목적지 위치보다 작은 정류장있나?
-			//있으면 정류장 구해서 정류장까지 시간 계산
-			//반복 종료
-			//없으면 버스부터 목적지까지 시간 계산
-			
-		}
+	private synchronized Bus getBusWithPredictedLocationAtTheTime(Bus bus, Date curTime) {
+		BusManager busManager = BusManager.getInstance();
+
+
+		Bus newBus = bus.copy();
+		newBus.setTime(curTime);
+		int timeGap = (int) (curTime.getTime() - newBus.getTime().getTime()) / 1000;
 		
-		return 0;
+		Optional<Station> beforeStation = StationManager.getInstance().stations.stream().filter(s -> s.getLocation() < newBus.getLocation()).max((a, b) -> a.getLocation() - b.getLocation());
+		if(beforeStation.isPresent()) {
+			Station before = beforeStation.get();
+			List<Station> stations = StationManager.getInstance().stations.stream().filter(s -> s.getLocation() >= before.getLocation()).collect(Collectors.toList());
+			
+			
+			while(timeGap > 0 ) {
+				for(Station station : stations) {
+					newBus.setLocation(newBus.getLocation() + Math.min(newBus.getSpeed(), station.getSpeed()));
+					if(--timeGap <= 0) {
+						break;
+					}
+					
+					if(before.getLocation()  >= station.getLocation()) {
+						continue;
+					}
+				}
+			}
+		} else {
+			while(timeGap > 0 ) {
+				newBus.setLocation(newBus.getLocation() + newBus.getSpeed());
+				if(--timeGap <= 0) {
+					break;
+				}
+				
+			}
+		}
+		return newBus;
 	}
 	
 	private synchronized int getEstimatedTimeToGetToTheStation(Bus bus, Station station, int needTime) { 
@@ -183,7 +205,12 @@ public class BusManager {
 		int remain = 0;
 		while(true) {
 			Optional<Station> nextStationFromBus = stationManager.getNextStationStationFromBus(bus);
-			Station next = nextStationFromBus.get();
+			Station next = null;
+			if(nextStationFromBus.isPresent()) {
+				next = nextStationFromBus.get();
+			} else {
+				next = stationManager.getStations().stream().max(Comparator.comparing(Station::getLocation)).orElseGet(null);
+			}
 			if(station.getName().equals(next.getName())) {
 				int speed = Math.min(station.getSpeed(), bus.getSpeed());
 				if (speed == 0)  {
