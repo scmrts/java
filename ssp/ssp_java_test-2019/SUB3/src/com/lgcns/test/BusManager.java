@@ -23,7 +23,7 @@ public class BusManager {
 	
 	public static Comparator<Bus> locationComparator = (o1, o2) ->o1.getLocation() - o2.getLocation();
 	
-	public static Comparator<Bus> nameComparator = (o1, o2) ->o1.getName().compareTo(o2.getName());
+	public static Comparator<Bus> nameComparator = Comparator.comparing(Bus::getName);//(o1, o2) ->o1.getName().compareTo(o2.getName());
 	
 	private static BusManager instance;
 	
@@ -76,6 +76,10 @@ public class BusManager {
 	
 	
 	public synchronized List<Bus> getPrePostBusInfo(Date time) {
+		
+		
+		
+		
 		List<Bus> collect = this.buses.entrySet().stream()
 				.map(e -> e.getValue().stream().sorted(locationComparator.reversed()).findFirst().orElseGet(Bus::new))
 				.sorted(locationComparator).collect(Collectors.toList());
@@ -91,11 +95,11 @@ public class BusManager {
 		noBus.setLocation(0);
 		//직전
 		Bus[] buses = new Bus[2];
-		buses[0] = prePostBusInfo.stream().filter(o -> o.getLocation() < 1).collect(Collectors.maxBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
+		buses[0] = prePostBusInfo.stream().filter(o -> o.getLocation() < bus.getLocation()).collect(Collectors.maxBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
 			return noBus;
 		});
 		//직후
-		buses[1] = prePostBusInfo.stream().filter(o -> o.getLocation() > 1).collect(Collectors.minBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
+		buses[1] = prePostBusInfo.stream().filter(o -> o.getLocation() > bus.getLocation()).collect(Collectors.minBy(Comparator.comparing(Bus::getLocation))).orElseGet(() ->{
 			return noBus;
 		});
 		return buses;
@@ -106,11 +110,11 @@ public class BusManager {
 		this.getPrePostBusInfo(currentTime).stream().sorted(Comparator.comparing(Bus::getName)).forEach(o -> {
 			Bus[] buses = this.getPrePostBusInfo(o, currentTime);
 			//11:00:06#BUS01#BUS03,05370#BUS02,01230
-			int prediff = buses[0].getLocation() - o.getLocation() <  0 ? 0 : buses[0].getLocation() - o.getLocation() ;
-			int postdiff = o.getLocation() - buses[1].getLocation() <  0 ? 0 : o.getLocation() - buses[1].getLocation();
+			int prediff = buses[1].getLocation() - o.getLocation()  <  0 ? 0 : buses[1].getLocation() - o.getLocation();
+			int postdiff = o.getLocation() -  buses[0].getLocation() <  0 ? 0 : o.getLocation() -  buses[0].getLocation();
 			
 			String str = String.format("%s#%s#%s,%05d#%s,%05d\n", 
-					RunManager.transformToString(o.getTime()), o.getName(), buses[0].getName(), buses[0].getName().equals("NOBUS") ? 0 : prediff, buses[1].getName(), buses[1].getName().equals("NOBUS") ? 0 : postdiff);
+					RunManager.transformToString(o.getTime()), o.getName(), buses[1].getName(), buses[1].getName().equals("NOBUS") ? 0 : prediff, buses[0].getName(), buses[0].getName().equals("NOBUS") ? 0 : postdiff);
 			ret.add(str);
 		});
 		return ret;
@@ -131,21 +135,17 @@ public class BusManager {
 	private synchronized Arrival getFastestBusToStation(Station station) {
 		Bus min = null;
 		int rm = Integer.MAX_VALUE;
-		System.out.println("####");
-		System.out.println(station.getName());
 		for(Iterator iter = this.buses.keySet().iterator() ; iter.hasNext() ; ) {
 			List<Bus> busList = this.buses.get(iter.next());
 			busList.sort(BusManager.locationComparator);
 			Bus bus = busList.get(busList.size() -1);
 			int estimatedTimeToGetToTheStation = this.getEstimatedTimeToGetToTheStation(bus.copy(), station, 0);
-			System.out.println(bus.getName());
-			System.out.println(estimatedTimeToGetToTheStation);
 			
-			if(rm > estimatedTimeToGetToTheStation && estimatedTimeToGetToTheStation > 0) {
+			if(rm >= estimatedTimeToGetToTheStation && estimatedTimeToGetToTheStation >= 0) {
 				rm = estimatedTimeToGetToTheStation;
 				min = bus;
 			}
-//			System.out.println(min);
+
 		}
 		if(min == null) {
 			min = new Bus();
@@ -161,8 +161,23 @@ public class BusManager {
 		}
 	}
 	
+	private synchronized int getEstimatedTimeToTheLocation(Bus bus, int location, int needTime) {
+		if(bus.getLocation() > location) return -1;
+		while(true) {
+			//버스위치보다 목적지 위치가 큰 경우 처리
+			//반복 시작
+			//버스위치보다 크고 목적지 위치보다 작은 정류장있나?
+			//있으면 정류장 구해서 정류장까지 시간 계산
+			//반복 종료
+			//없으면 버스부터 목적지까지 시간 계산
+			
+		}
+		
+		return 0;
+	}
+	
 	private synchronized int getEstimatedTimeToGetToTheStation(Bus bus, Station station, int needTime) { 
-		if(bus.getLocation() > station.getLocation()) return 0;
+		if(bus.getLocation() > station.getLocation()) return -1;
 		
 		StationManager stationManager = StationManager.getInstance();
 		int remain = 0;
@@ -195,42 +210,7 @@ public class BusManager {
 		return remain;
 	}
 	
-	private synchronized int getEstimatedTimeToGetToTheStation2(Bus bus, Station station, int needTime) {
-		if(bus.getLocation() > station.getLocation()) return 0;
-		
-		StationManager stationManager = StationManager.getInstance();
-		Optional<Station> nextStationStationFromBus = stationManager.getNextStationStationFromBus(bus);
-		Station nextStation = nextStationStationFromBus.get();
-		if(! nextStation.getName().equals(station.getName())) {
-			//종착점과 버스의 다음 정류장이 다른 경우
-			Optional<Station> previousStation = stationManager.getPreviousStation(station);
-			if(previousStation.isPresent()) {
-				needTime += this.getEstimatedTimeToGetToTheStation(bus, nextStation, needTime);
-			} else {
-				//종착역이 버스의 다음 정류장(1)과 다를 경우 정류장(1) 이전 정류장이 없을 경우는 없어서 구현 안함
-				
-			}
-		}
-//		} else {
-			//종착점과 버스의 다음 정류장이 같은 경우
-		Optional<Station> previousStationFromBus = stationManager.getPreviousStationFromBus(bus);
-		int remainDistance = 0;
-		int speed = 0;
-		remainDistance = nextStation.getLocation() - bus.getLocation();
-		if(previousStationFromBus.isPresent()) {
-			Station tmp = previousStationFromBus.get();
-			speed = Math.min(bus.getSpeed(), tmp.getSpeed());
-		}else {
-			speed = bus.getSpeed();
-		}
-		bus.setLocation(bus.getLocation() + remainDistance);
-		needTime = remainDistance / speed;
-//		}
-		
-		return needTime;
-	}
-	
-	public List<String> transformFastestBusToStations(Date curTime) {
+	public synchronized List<String> transformFastestBusToStations(Date curTime) {
 		List<Arrival> arrivals = this.getFastestBusToStations();
 		List<String> ret = new ArrayList<String>();
 		arrivals.stream().forEach(o -> {
@@ -241,7 +221,7 @@ public class BusManager {
 		return ret;
 	}
 	
-	public List<Arrival> getFastestBusToStations() {
+	public synchronized List<Arrival> getFastestBusToStations() {
 		StationManager stationManager = StationManager.getInstance();
 		
 		List<Station> stations = stationManager.getStations();
