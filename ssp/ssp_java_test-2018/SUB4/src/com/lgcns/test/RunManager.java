@@ -49,8 +49,6 @@ public class RunManager {
 					String tmp = (new String(Arrays.copyOfRange(buffer, 0, read)));
 					if(tmp.startsWith("ACK")) {
 						bufferedOutputStream.write(contents[currentLine++].getBytes());
-//						
-//						
 					} else if(tmp.startsWith("ERR")){
 						bufferedOutputStream.write(contents[currentLine].getBytes());
 					} else if(isNumber(tmp)) {
@@ -64,7 +62,6 @@ public class RunManager {
 					bufferedOutputStream.flush();
 					if(currentLine == contents.length -1) {
 						Thread.currentThread().interrupt();
-						
 					}
 				}
 				
@@ -93,16 +90,17 @@ public class RunManager {
 						int read = bufferedInputStream.read(buffer, 0, bufferSize);
 						String tmp = (new String(Arrays.copyOfRange(buffer, 0, read)));
 						if(tmp.startsWith("ACK")) {
-							bufferedOutputStream.write(contents[currentLine++].getBytes());
+							bufferedOutputStream.write(RunManager.decrypt(contents[currentLine++]).getBytes());
 						} else if(tmp.startsWith("ERR")){
-							bufferedOutputStream.write(contents[currentLine].getBytes());
+							
+							bufferedOutputStream.write(RunManager.decrypt(contents[--currentLine]).getBytes());
 						} else if(isNumber(tmp)) {
 							currentLine = 0;
 							contents = readFile(Integer.parseInt(tmp) - 1, tmp).split("\n");
-							bufferedOutputStream.write(contents[currentLine++].getBytes());
+							bufferedOutputStream.write(RunManager.decrypt(contents[currentLine++]).getBytes());
 						} else { //파일명
 							contents = readFile(0, tmp).split("\n");
-							bufferedOutputStream.write(contents[currentLine++].getBytes());
+							bufferedOutputStream.write(RunManager.decrypt(contents[currentLine++]).getBytes());
 						}
 						bufferedOutputStream.flush();
 						if(currentLine == contents.length -1) {
@@ -215,16 +213,7 @@ public class RunManager {
 				}).collect(Collectors.joining("\n"));
 				
 				
-				String collect2 = collect.chars().<String>mapToObj(o -> {
-					if(o >= 65 && o <= 90) {
-						o = o - 5;
-						if(o < 65) {
-							o = o + 26;
-						}
-					} 
-					return Character.toString((char) o);
-				}).collect(Collectors.joining());
-				h.value = collect2;
+				h.value = collect;
 //				Files.write(path, collect2.getBytes());
 				
 				return FileVisitResult.CONTINUE;
@@ -232,5 +221,15 @@ public class RunManager {
 		});
 		return h.value;
 	}
-	
+	public static String decrypt(String collect) {
+		return collect.chars().<String>mapToObj(o -> {
+			if(o >= 65 && o <= 90) {
+				o = o - 5;
+				if(o < 65) {
+					o = o + 26;
+				}
+			} 
+			return Character.toString((char) o);
+		}).collect(Collectors.joining());
+	}
 }
