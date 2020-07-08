@@ -3,7 +3,6 @@ package com.lgcns.test;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.FileVisitResult;
@@ -18,7 +17,9 @@ import java.util.StringJoiner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.omg.CORBA.StringHolder;
 
@@ -39,8 +40,6 @@ public class RunManager {
 		@Override
 		public void run() {
 			String[] contents = null;
-			String key = null;
-			String fileName = null;
 			try(BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(socket.getOutputStream());
 					BufferedInputStream bufferedInputStream = new BufferedInputStream(socket.getInputStream())) {
 				int bufferSize = 512;
@@ -52,28 +51,19 @@ public class RunManager {
 					String tmp = new String(buffer, 0, read);
 					if(tmp.startsWith("ACK")) {
 						bufferedOutputStream.write(contents[currentLine++].getBytes());
-//						
-//						
 					} else if(tmp.startsWith("ERR")){
 						bufferedOutputStream.write(contents[currentLine].getBytes());
 					} else if(isNumber(tmp)) {
 						currentLine = 0;
-//						contents = readFile(Integer.parseInt(tmp) - 1, tmp).split("\n");
-						contents = readFile(Integer.parseInt(tmp) - 1, fileName, key).split("\n");
+						contents = readFile(Integer.parseInt(tmp) - 1, tmp).split("\n");
 						bufferedOutputStream.write(contents[currentLine++].getBytes());
-					} else { //�뙆�씪紐�
-						
-						fileName = tmp.split("#")[0];
-						key = tmp.split("#")[1];
-						contents = readFile(0, fileName, key).split("\n");
-						
-//						contents = readFile(0, tmp).split("\n");
+					} else { //파일명
+						contents = readFile(0, tmp).split("\n");
 						bufferedOutputStream.write(contents[currentLine++].getBytes());
 					}
 					bufferedOutputStream.flush();
 					if(currentLine == contents.length -1) {
 						Thread.currentThread().interrupt();
-						
 					}
 				}
 				
@@ -92,31 +82,27 @@ public class RunManager {
 			while(!Thread.currentThread().isInterrupted()) {
 				Socket socket = server.accept();
 				String[] contents = null;
-				String key = null;
-				String fileName = null;
 				try(BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(socket.getOutputStream());
 						BufferedInputStream bufferedInputStream = new BufferedInputStream(socket.getInputStream())) {
 					int bufferSize = 512;
 					byte[] buffer = new byte[bufferSize];
 
 					int currentLine = 0;
-					
 					while(!Thread.currentThread().isInterrupted()) {
 						int read = bufferedInputStream.read(buffer, 0, bufferSize);
 						String tmp = new String(buffer, 0, read);
 						if(tmp.startsWith("ACK")) {
-							bufferedOutputStream.write(contents[currentLine++].getBytes());
+							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
 						} else if(tmp.startsWith("ERR")){
-							bufferedOutputStream.write(contents[currentLine].getBytes());
+							
+							bufferedOutputStream.write(RunManager.encrypt(contents[--currentLine]).getBytes());
 						} else if(isNumber(tmp)) {
 							currentLine = 0;
-							contents = readFile(Integer.parseInt(tmp) - 1, fileName, key).split("\n");
-							bufferedOutputStream.write(contents[currentLine++].getBytes());
-						} else { //�뙆�씪紐�
-							fileName = tmp.split("#")[0];
-							key = tmp.split("#")[1];
-							contents = readFile(0, fileName, key).split("\n");
-							bufferedOutputStream.write(contents[currentLine++].getBytes());
+							contents = readFile(Integer.parseInt(tmp) - 1, tmp).split("\n");
+							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
+						} else { //파일명
+							contents = readFile(0, tmp).split("\n");
+							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
 						}
 						bufferedOutputStream.flush();
 						if(currentLine == contents.length -1) {
@@ -158,7 +144,7 @@ public class RunManager {
 	}
 	
 	
-	public static String readFile(int line, String file, String key) throws IOException {
+	public static String readFile(int line, String file) throws IOException {
 		StringHolder h = new StringHolder();
 		Files.walkFileTree(Paths.get("./BIGFILE"), new SimpleFileVisitor<Path>() {
 			@Override
@@ -228,26 +214,8 @@ public class RunManager {
 					return ret;
 				}).collect(Collectors.joining("\n"));
 				
-				int keyLength = key.length();
 				
-				StringHolder abc = new StringHolder("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-				key.chars().forEach(o -> {
-					abc.value = abc.value.replaceAll(Character.toString((char) o), "");
-				});
-				abc.value = key + abc.value;
-				char[] keys = abc.value.toCharArray();
-				String collect2 = collect.chars().<String>mapToObj(o -> {
-					if(o <= 90 && o >=65)  {
-						o = keys[o -65];
-					}
-					return Character.toString((char) (o));
-				}).collect(Collectors.joining());
-				
-				
-				
-				
-				
-				h.value = collect2;
+				h.value = collect;
 //				Files.write(path, collect2.getBytes());
 				
 				return FileVisitResult.CONTINUE;
@@ -256,4 +224,26 @@ public class RunManager {
 		return h.value;
 	}
 	
+	private Function<String, String> encrypt = target -> {
+		return target.chars().<String>mapToObj(o -> {
+			if(o >= 65 && o <= 90) {
+				o = o - 5;
+				if(o < 65) {
+					o = o + 26;
+				}
+			} 
+			return Character.toString((char) o);
+		}).collect(Collectors.joining());
+	};
+	public static String encrypt(String collect) {
+		return collect.chars().<String>mapToObj(o -> {
+			if(o >= 65 && o <= 90) {
+				o = o - 5;
+				if(o < 65) {
+					o = o + 26;
+				}
+			} 
+			return Character.toString((char) o);
+		}).collect(Collectors.joining());
+	}
 }
