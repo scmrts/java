@@ -90,17 +90,17 @@ public class RunManager {
 						int read = bufferedInputStream.read(buffer, 0, bufferSize);
 						String tmp = new String(buffer, 0, read);
 						if(tmp.startsWith("ACK")) {
-							bufferedOutputStream.write(RunManager.decrypt(contents[currentLine++]).getBytes());
+							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
 						} else if(tmp.startsWith("ERR")){
 							
-							bufferedOutputStream.write(RunManager.decrypt(contents[--currentLine]).getBytes());
+							bufferedOutputStream.write(RunManager.encrypt(contents[--currentLine]).getBytes());
 						} else if(isNumber(tmp)) {
 							currentLine = 0;
 							contents = readFile(Integer.parseInt(tmp) - 1, tmp).split("\n");
-							bufferedOutputStream.write(RunManager.decrypt(contents[currentLine++]).getBytes());
+							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
 						} else { //파일명
 							contents = readFile(0, tmp).split("\n");
-							bufferedOutputStream.write(RunManager.decrypt(contents[currentLine++]).getBytes());
+							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
 						}
 						bufferedOutputStream.flush();
 						if(currentLine == contents.length -1) {
@@ -221,7 +221,7 @@ public class RunManager {
 		});
 		return h.value;
 	}
-	public static String decrypt(String collect) {
+	public static String encrypt(String collect) {
 		return collect.chars().<String>mapToObj(o -> {
 			if(o >= 65 && o <= 90) {
 				o = o - 5;
