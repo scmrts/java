@@ -25,6 +25,8 @@ import org.omg.CORBA.StringHolder;
 
 
 public class RunManager {
+	
+	
 
 	private static class ClientService implements Runnable{
 
@@ -75,6 +77,26 @@ public class RunManager {
 		}
 	}
 	
+	public static BiFunction<Integer, Character, String> func = (a, b) -> {
+		String out = "";
+		for(int k = 0 ;k < a ; k++) {
+			out += Character.toString(b);
+		}
+		return out;
+	};
+	
+	public static Function<String, String> encrypt = target -> {
+		return target.chars().<String>mapToObj(o -> {
+			if(o >= 65 && o <= 90) {
+				o = o - 5;
+				if(o < 65) {
+					o = o + 26;
+				}
+			} 
+			return Character.toString((char) o);
+		}).collect(Collectors.joining());
+	};
+	
 	public static void main(String[] args) throws IOException{
 		
 		ExecutorService executerService = Executors.newFixedThreadPool(10);
@@ -92,17 +114,17 @@ public class RunManager {
 						int read = bufferedInputStream.read(buffer, 0, bufferSize);
 						String tmp = new String(buffer, 0, read);
 						if(tmp.startsWith("ACK")) {
-							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
+							bufferedOutputStream.write(encrypt.apply(contents[currentLine++]).getBytes());
 						} else if(tmp.startsWith("ERR")){
 							
-							bufferedOutputStream.write(RunManager.encrypt(contents[--currentLine]).getBytes());
+							bufferedOutputStream.write(encrypt.apply(contents[--currentLine]).getBytes());
 						} else if(isNumber(tmp)) {
 							currentLine = 0;
 							contents = readFile(Integer.parseInt(tmp) - 1, tmp).split("\n");
-							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
+							bufferedOutputStream.write(encrypt.apply(contents[currentLine++]).getBytes());
 						} else { //파일명
 							contents = readFile(0, tmp).split("\n");
-							bufferedOutputStream.write(RunManager.encrypt(contents[currentLine++]).getBytes());
+							bufferedOutputStream.write(encrypt.apply(contents[currentLine++]).getBytes());
 						}
 						bufferedOutputStream.flush();
 						if(currentLine == contents.length -1) {
@@ -178,13 +200,7 @@ public class RunManager {
 					}
 					
 				}
-				BiFunction<Integer, Character, String> func = (a, b) -> {
-					String out = "";
-					for(int k = 0 ;k < a ; k++) {
-						out += Character.toString(b);
-					}
-					return out;
-				};
+				
 				
 				String collect = Arrays.stream(stj.toString().split("\n")).map(line -> {
 					char[] chLine = line.toCharArray();
@@ -224,26 +240,5 @@ public class RunManager {
 		return h.value;
 	}
 	
-	private Function<String, String> encrypt = target -> {
-		return target.chars().<String>mapToObj(o -> {
-			if(o >= 65 && o <= 90) {
-				o = o - 5;
-				if(o < 65) {
-					o = o + 26;
-				}
-			} 
-			return Character.toString((char) o);
-		}).collect(Collectors.joining());
-	};
-	public static String encrypt(String collect) {
-		return collect.chars().<String>mapToObj(o -> {
-			if(o >= 65 && o <= 90) {
-				o = o - 5;
-				if(o < 65) {
-					o = o + 26;
-				}
-			} 
-			return Character.toString((char) o);
-		}).collect(Collectors.joining());
-	}
+
 }
