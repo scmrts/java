@@ -46,7 +46,7 @@ public class RunManager {
 				int currentLine = 0;
 				while(!Thread.currentThread().isInterrupted()) {
 					int read = bufferedInputStream.read(buffer, 0, bufferSize);
-					String tmp = (new String(Arrays.copyOfRange(buffer, 0, read)));
+					String tmp = new String(buffer, 0, read);
 					if(tmp.startsWith("ACK")) {
 						bufferedOutputStream.write(contents[currentLine++].getBytes());
 					} else if(tmp.startsWith("ERR")){
